@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { Button, Card, RoomCode, PlayerList, Timer } from '../components/common';
-import { createRoom, updateRoomStatus, getPlayersInRoom, getAnswersForQuestion } from '../lib/supabase';
+import { createRoom, updateRoomStatus, getPlayersInRoom, getAnswersForQuestion, supabase } from '../lib/supabase';
 import { games, checkAnswer } from '../data/games';
 
 export default function HostGame() {
@@ -66,6 +66,43 @@ export default function HostGame() {
     const interval = setInterval(refreshPlayers, 3000);
     return () => clearInterval(interval);
   }, [room?.id, refreshPlayers]);
+
+  // Subscribe to answers for current question in real-time
+  useEffect(() => {
+    if (!room?.id || !currentGame || gamePhase !== 'question' || !supabase) return;
+
+    console.log('Setting up answer subscription for:', room.id, currentGame, currentQuestionIndex);
+
+    const channel = supabase
+      .channel(`host-answers:${room.id}:${currentGame}:${currentQuestionIndex}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'answers',
+        filter: `room_id=eq.${room.id}`
+      }, (payload) => {
+        const newAnswer = payload.new;
+        // Only add if it's for the current game/question
+        if (newAnswer.game_id === currentGame && newAnswer.question_index === currentQuestionIndex) {
+          console.log('New answer received:', newAnswer);
+          setQuestionAnswers(prev => {
+            // Avoid duplicates
+            if (prev.some(a => a.player_id === newAnswer.player_id)) {
+              return prev;
+            }
+            return [...prev, newAnswer];
+          });
+        }
+      })
+      .subscribe((status) => {
+        console.log('Answer subscription status:', status);
+      });
+
+    return () => {
+      console.log('Cleaning up answer subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [room?.id, currentGame, currentQuestionIndex, gamePhase]);
 
   // Get current game data
   const currentGameData = currentGame ? games[currentGame] : null;
