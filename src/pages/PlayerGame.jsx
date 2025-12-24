@@ -329,11 +329,96 @@ export default function PlayerGame() {
         </div>
 
         {/* Question info */}
-        <div className="text-center mb-4">
+        <div className="text-center mb-2">
           <span className="text-sm text-gray-500">
             {gameData.title} - Q{currentQuestionIndex + 1}
           </span>
         </div>
+
+        {/* Question display - same as host screen */}
+        <Card className="w-full max-w-md mb-4 text-center" padding="md">
+          {/* Emoji prompt for emoji games */}
+          {question.prompt && (
+            <p className="text-4xl md:text-5xl mb-2">{question.prompt}</p>
+          )}
+
+          {/* Question text */}
+          {question.question && (
+            <p className="text-xl md:text-2xl font-bold text-christmas-green leading-relaxed">
+              {question.question}
+            </p>
+          )}
+
+          {/* Scrambled word */}
+          {question.scrambled && (
+            <p className="text-3xl md:text-4xl font-mono font-bold text-christmas-red tracking-wider">
+              {question.scrambled}
+            </p>
+          )}
+
+          {/* Code for codecracker */}
+          {question.code && (
+            <p className="text-xl md:text-2xl font-mono font-bold text-christmas-green">
+              {question.code}
+            </p>
+          )}
+
+          {/* Statement for true/false */}
+          {question.statement && (
+            <p className="text-xl md:text-2xl font-bold text-christmas-green leading-relaxed">
+              {question.statement}
+            </p>
+          )}
+
+          {/* Clue or hint text */}
+          {question.clue && (
+            <p className="text-xl md:text-2xl font-bold text-christmas-green leading-relaxed">
+              {question.clue}
+            </p>
+          )}
+
+          {/* Lyric for finish the lyrics */}
+          {question.lyric && (
+            <p className="text-lg md:text-xl italic text-gray-700 leading-relaxed">
+              "{question.lyric}..."
+            </p>
+          )}
+
+          {/* Description (for candy/recipe challenges) */}
+          {question.description && (
+            <p className="text-lg md:text-xl text-gray-700 leading-relaxed">
+              {question.description}
+            </p>
+          )}
+
+          {/* Ingredients (for recipe challenge) */}
+          {question.ingredients && (
+            <p className="text-lg md:text-xl text-gray-700 leading-relaxed">
+              {question.ingredients}
+            </p>
+          )}
+
+          {/* Quote (for movie quote game) */}
+          {question.quote && (
+            <p className="text-lg md:text-xl italic text-gray-700 leading-relaxed">
+              "{question.quote}"
+            </p>
+          )}
+
+          {/* Item to match (for matching games) */}
+          {question.item && (
+            <p className="text-xl md:text-2xl font-bold text-christmas-green leading-relaxed">
+              {question.item}
+            </p>
+          )}
+
+          {/* Riddle */}
+          {question.riddle && (
+            <p className="text-lg md:text-xl text-gray-700 leading-relaxed">
+              {question.riddle}
+            </p>
+          )}
+        </Card>
 
         {/* Answer input area */}
         <div className="flex-1 flex flex-col items-center justify-center">
