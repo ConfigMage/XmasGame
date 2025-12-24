@@ -38,49 +38,68 @@ export default function PlayerGame() {
 
   // Subscribe to room updates
   useEffect(() => {
-    if (!room?.id) return;
+    if (!room?.id || !supabase) return;
 
-    const subscription = subscribeToRoom(room.id, {
-      onRoomChange: (updatedRoom) => {
+    console.log('Setting up room subscription for:', room.id);
+
+    const channel = supabase
+      .channel(`player-room:${room.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'rooms',
+        filter: `id=eq.${room.id}`
+      }, (payload) => {
+        console.log('Room update received:', payload.new);
+        const updatedRoom = payload.new;
         setRoom(updatedRoom);
 
         // Handle game state changes
         if (updatedRoom.status === 'lobby') {
           setGameState('lobby');
         } else if (updatedRoom.status === 'playing') {
-          // New question started
-          if (updatedRoom.current_game !== currentGame ||
-              updatedRoom.current_question !== currentQuestionIndex) {
-            setCurrentGame(updatedRoom.current_game);
-            setCurrentQuestionIndex(updatedRoom.current_question);
-            setSubmitted(false);
-            setAnswer('');
-            setLastResult(null);
-            questionStartTime.current = Date.now();
-            setGameState('playing');
-          }
+          // Always update game state when playing
+          setCurrentGame(updatedRoom.current_game);
+          setCurrentQuestionIndex(updatedRoom.current_question);
+          setSubmitted(false);
+          setAnswer('');
+          setLastResult(null);
+          questionStartTime.current = Date.now();
+          setGameState('playing');
         } else if (updatedRoom.status === 'finished') {
           setGameState('finished');
         }
-      },
-      onPlayersChange: async () => {
-        // Refresh our player data
-        if (player?.id) {
-          const { data } = await supabase
-            .from('players')
-            .select()
-            .eq('id', player.id)
-            .single();
-          if (data) {
-            setPlayer(data);
-            setLocalScore(data.score);
-          }
-        }
-      },
-    });
+      })
+      .subscribe((status) => {
+        console.log('Subscription status:', status);
+      });
 
-    return () => subscription.unsubscribe();
-  }, [room?.id, currentGame, currentQuestionIndex, player?.id]);
+    return () => {
+      console.log('Cleaning up subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [room?.id]);
+
+  // Separate effect to refresh player data periodically
+  useEffect(() => {
+    if (!player?.id || !supabase) return;
+
+    const refreshPlayer = async () => {
+      const { data } = await supabase
+        .from('players')
+        .select()
+        .eq('id', player.id)
+        .single();
+      if (data) {
+        setPlayer(data);
+        setLocalScore(data.score);
+      }
+    };
+
+    // Refresh every 5 seconds while in game
+    const interval = setInterval(refreshPlayer, 5000);
+    return () => clearInterval(interval);
+  }, [player?.id]);
 
   // Handle join
   const handleJoin = async (e) => {
