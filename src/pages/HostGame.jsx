@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
-import { Button, Card, RoomCode, PlayerList, Timer } from '../components/common';
-import { createRoom, updateRoomStatus, getPlayersInRoom, getAnswersForQuestion, supabase } from '../lib/supabase';
-import { games, checkAnswer } from '../data/games';
+import { Button, Card, RoomCode, PlayerList, Timer, ScoreDisplay } from '../components/common';
+import { createRoom, updateRoomStatus, getPlayersInRoom, getAnswersForQuestion, submitAnswer, updatePlayerScore, supabase } from '../lib/supabase';
+import { games, checkAnswer, GAME_TYPES } from '../data/games';
 
 export default function HostGame() {
   const navigate = useNavigate();
@@ -28,6 +28,13 @@ export default function HostGame() {
   const [showAnswer, setShowAnswer] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(30);
   const [questionAnswers, setQuestionAnswers] = useState([]);
+
+  // Host playing state
+  const [hostAnswer, setHostAnswer] = useState('');
+  const [hostSubmitted, setHostSubmitted] = useState(false);
+  const [hostLastResult, setHostLastResult] = useState(null);
+  const [hostScore, setHostScore] = useState(0);
+  const questionStartTime = useRef(Date.now());
 
   // Initialize room on mount
   useEffect(() => {
@@ -121,6 +128,10 @@ export default function HostGame() {
     setCurrentQuestionIndex(0);
     setGamePhase('question');
     setShowAnswer(false);
+    setHostAnswer('');
+    setHostSubmitted(false);
+    setHostLastResult(null);
+    questionStartTime.current = Date.now();
 
     await updateRoomStatus(room.id, 'playing', firstGame, 0);
   };
@@ -129,6 +140,10 @@ export default function HostGame() {
   const nextQuestion = async () => {
     setShowAnswer(false);
     setQuestionAnswers([]);
+    setHostAnswer('');
+    setHostSubmitted(false);
+    setHostLastResult(null);
+    questionStartTime.current = Date.now();
 
     const nextIndex = currentQuestionIndex + 1;
 
@@ -179,6 +194,54 @@ export default function HostGame() {
   const endGame = async () => {
     setGamePhase('finished');
     await updateRoomStatus(room.id, 'finished');
+  };
+
+  // Handle host answer submit
+  const handleHostSubmit = async () => {
+    if (!hostAnswer || hostSubmitted) return;
+
+    setHostSubmitted(true);
+
+    const gameData = games[currentGame];
+    const question = gameData.questions?.[currentQuestionIndex] ||
+                     gameData.pairs?.[currentQuestionIndex];
+
+    // Check if answer is correct
+    let isCorrect = false;
+
+    if (gameData.type === GAME_TYPES.TRUE_FALSE) {
+      isCorrect = hostAnswer === String(question.answer);
+    } else if (gameData.type === GAME_TYPES.MULTIPLE_CHOICE ||
+               gameData.type === GAME_TYPES.TWO_CHOICE) {
+      isCorrect = hostAnswer === question.answer;
+    } else {
+      isCorrect = checkAnswer(hostAnswer, question.answer, question.alternates || []);
+    }
+
+    const responseTime = Date.now() - questionStartTime.current;
+    const points = isCorrect ? 100 : 0;
+
+    // Submit answer to database
+    await submitAnswer(
+      room.id,
+      player.id,
+      currentGame,
+      currentQuestionIndex,
+      hostAnswer,
+      isCorrect,
+      points,
+      responseTime
+    );
+
+    // Update host score
+    if (isCorrect) {
+      await updatePlayerScore(player.id, points, true, false);
+      setHostScore(prev => prev + points);
+    } else {
+      await updatePlayerScore(player.id, 0, false, true);
+    }
+
+    setHostLastResult({ isCorrect, points });
   };
 
   // Loading state
@@ -267,9 +330,12 @@ export default function HostGame() {
       <div className="min-h-screen flex flex-col p-4 md:p-8">
         {/* Header */}
         <div className="flex justify-between items-center mb-4">
-          <div>
-            <span className="text-2xl">{currentGameData.icon}</span>
-            <span className="ml-2 font-semibold">{currentGameData.title}</span>
+          <div className="flex items-center gap-4">
+            <div>
+              <span className="text-2xl">{currentGameData.icon}</span>
+              <span className="ml-2 font-semibold">{currentGameData.title}</span>
+            </div>
+            <ScoreDisplay score={hostScore} size="sm" />
           </div>
           <div className="text-right">
             <span className="text-gray-500">Question</span>
@@ -352,6 +418,113 @@ export default function HostGame() {
           <div className="mt-6 text-xl text-gray-600">
             {questionAnswers.length} / {players.filter(p => !p.is_host).length} answers received
           </div>
+
+          {/* Host answer input */}
+          {!showAnswer && (
+            <Card className="w-full max-w-md mt-6" padding="md">
+              {!hostSubmitted ? (
+                <>
+                  <p className="text-center text-sm text-gray-500 mb-3">Your answer (Host)</p>
+
+                  {/* True/False buttons */}
+                  {currentGameData.type === GAME_TYPES.TRUE_FALSE && (
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <Button
+                        variant={hostAnswer === 'true' ? 'secondary' : 'outline'}
+                        size="lg"
+                        onClick={() => setHostAnswer('true')}
+                      >
+                        ✓ Fact
+                      </Button>
+                      <Button
+                        variant={hostAnswer === 'false' ? 'primary' : 'outline'}
+                        size="lg"
+                        onClick={() => setHostAnswer('false')}
+                      >
+                        ✗ Fiction
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Two-choice (Red/Green) */}
+                  {currentGameData.type === GAME_TYPES.TWO_CHOICE && currentQuestion.options && (
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      {currentQuestion.options.map((option) => (
+                        <Button
+                          key={option}
+                          variant={hostAnswer === option ? 'secondary' : 'outline'}
+                          size="lg"
+                          onClick={() => setHostAnswer(option)}
+                        >
+                          {option === 'Red' ? '🔴' : '🟢'} {option}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Multiple choice */}
+                  {currentGameData.type === GAME_TYPES.MULTIPLE_CHOICE && currentQuestion.options && (
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      {currentQuestion.options.map((option, i) => (
+                        <Button
+                          key={option}
+                          variant={hostAnswer === option ? 'secondary' : 'outline'}
+                          size="md"
+                          onClick={() => setHostAnswer(option)}
+                          className="text-left justify-start text-sm"
+                        >
+                          <span className="font-bold mr-2">{String.fromCharCode(65 + i)}.</span>
+                          {option}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Text input for other types */}
+                  {(currentGameData.type === GAME_TYPES.TRIVIA ||
+                    currentGameData.type === GAME_TYPES.EMOJI ||
+                    currentGameData.type === GAME_TYPES.FILL_BLANK ||
+                    currentGameData.type === GAME_TYPES.WORD_SCRAMBLE ||
+                    currentGameData.type === GAME_TYPES.MATCHING ||
+                    currentGameData.type === GAME_TYPES.CODECRACKER) && (
+                    <input
+                      type="text"
+                      value={hostAnswer}
+                      onChange={(e) => setHostAnswer(e.target.value)}
+                      placeholder="Type your answer..."
+                      className="w-full text-lg border-2 border-gray-300 rounded-xl p-3 mb-3
+                               focus:border-christmas-green focus:ring-2 focus:ring-christmas-green/20"
+                      autoComplete="off"
+                    />
+                  )}
+
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    onClick={handleHostSubmit}
+                    disabled={!hostAnswer}
+                  >
+                    Submit
+                  </Button>
+                </>
+              ) : (
+                <div className="text-center">
+                  {hostLastResult?.isCorrect ? (
+                    <>
+                      <span className="text-4xl">🎉</span>
+                      <p className="text-christmas-green font-bold mt-2">Correct! +{hostLastResult.points}</p>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-4xl">😅</span>
+                      <p className="text-christmas-red font-bold mt-2">Not quite!</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </Card>
+          )}
         </div>
 
         {/* Controls */}
@@ -378,6 +551,9 @@ export default function HostGame() {
 
   // Scoreboard phase
   if (gamePhase === 'scoreboard') {
+    // Include all players (host can play too!)
+    const allPlayers = [...players].sort((a, b) => b.score - a.score);
+
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
         <h1 className="font-festive text-5xl md:text-7xl text-christmas-red mb-8">
@@ -386,7 +562,7 @@ export default function HostGame() {
 
         <Card className="w-full max-w-2xl" padding="lg">
           <PlayerList
-            players={players.filter(p => !p.is_host)}
+            players={allPlayers}
             showScores
             showRank
             size="xl"
@@ -407,8 +583,8 @@ export default function HostGame() {
 
   // Finished phase
   if (gamePhase === 'finished') {
+    // Include all players (host can play too!)
     const sortedPlayers = [...players]
-      .filter(p => !p.is_host)
       .sort((a, b) => b.score - a.score);
 
     const winner = sortedPlayers[0];
