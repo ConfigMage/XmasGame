@@ -1,0 +1,88 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Mountains+of+Christmas:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-christmas-cream min-h-screen;
+  }
+
+  /* Prevent zoom on input focus for iOS */
+  input, select, textarea {
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-christmas-red hover:bg-christmas-darkRed text-white font-bold py-4 px-8 rounded-xl
+           shadow-lg transform transition-all duration-200 active:scale-95
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-christmas-green hover:bg-christmas-lightGreen text-white font-bold py-4 px-8 rounded-xl
+           shadow-lg transform transition-all duration-200 active:scale-95
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-gold {
+    @apply bg-christmas-gold hover:bg-yellow-500 text-christmas-darkRed font-bold py-4 px-8 rounded-xl
+           shadow-lg transform transition-all duration-200 active:scale-95
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl shadow-xl p-6 border-4 border-christmas-red;
+  }
+
+  .room-code {
+    @apply font-mono text-6xl md:text-8xl font-bold tracking-widest text-christmas-green;
+  }
+
+  .question-display {
+    @apply text-3xl md:text-5xl lg:text-6xl font-bold text-center text-christmas-green;
+  }
+
+  .score-display {
+    @apply text-2xl md:text-4xl font-bold text-christmas-gold;
+  }
+
+  /* Mobile-friendly touch targets */
+  .touch-target {
+    @apply min-h-[48px] min-w-[48px];
+  }
+
+  /* TV-friendly large text */
+  .tv-text {
+    @apply text-4xl md:text-6xl lg:text-7xl;
+  }
+
+  .tv-text-medium {
+    @apply text-2xl md:text-4xl lg:text-5xl;
+  }
+}
+
+/* Festive background pattern */
+.festive-bg {
+  background-color: #FFF8E7;
+  background-image:
+    radial-gradient(circle at 20% 80%, rgba(22, 91, 51, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(196, 30, 58, 0.1) 0%, transparent 50%);
+}
+
+/* Snowflake animation */
+.snowflake {
+  position: fixed;
+  color: white;
+  font-size: 1.5rem;
+  pointer-events: none;
+  animation: snow 10s linear infinite;
+  text-shadow: 0 0 5px rgba(0,0,0,0.1);
+}
