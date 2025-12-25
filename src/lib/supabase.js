@@ -187,6 +187,20 @@ export const updatePlayerScore = async (playerId, scoreToAdd, updateStreak = fal
   return { player: data, error: error?.message };
 };
 
+// Set player score to an absolute value (for manual adjustments)
+export const setPlayerScore = async (playerId, newScore) => {
+  if (!supabase) return { error: 'Database not connected' };
+
+  const { data, error } = await supabase
+    .from('players')
+    .update({ score: newScore })
+    .eq('id', playerId)
+    .select()
+    .single();
+
+  return { player: data, error: error?.message };
+};
+
 export const getPlayersInRoom = async (roomId) => {
   if (!supabase) return { players: [], error: 'Database not connected' };
 

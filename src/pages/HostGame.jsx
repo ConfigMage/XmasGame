@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { Button, Card, RoomCode, PlayerList, Timer, ScoreDisplay } from '../components/common';
-import { createRoom, updateRoomStatus, getPlayersInRoom, getAnswersForQuestion, submitAnswer, updatePlayerScore, supabase } from '../lib/supabase';
+import { createRoom, updateRoomStatus, getPlayersInRoom, getAnswersForQuestion, submitAnswer, updatePlayerScore, setPlayerScore, supabase } from '../lib/supabase';
 import { games, checkAnswer, GAME_TYPES } from '../data/games';
 
 export default function HostGame() {
@@ -35,6 +35,10 @@ export default function HostGame() {
   const [hostLastResult, setHostLastResult] = useState(null);
   const [hostScore, setHostScore] = useState(0);
   const questionStartTime = useRef(Date.now());
+
+  // Score adjustment state
+  const [adjustingPlayer, setAdjustingPlayer] = useState(null);
+  const [scoreAdjustment, setScoreAdjustment] = useState(0);
 
   // Initialize room on mount
   useEffect(() => {
@@ -242,6 +246,23 @@ export default function HostGame() {
     }
 
     setHostLastResult({ isCorrect, points });
+  };
+
+  // Handle score adjustment
+  const handleScoreAdjustment = async () => {
+    if (!adjustingPlayer || scoreAdjustment === 0) return;
+
+    const newScore = Math.max(0, adjustingPlayer.score + scoreAdjustment);
+    await setPlayerScore(adjustingPlayer.id, newScore);
+
+    // Update local host score if adjusting self
+    if (adjustingPlayer.id === player?.id) {
+      setHostScore(newScore);
+    }
+
+    await refreshPlayers();
+    setAdjustingPlayer(null);
+    setScoreAdjustment(0);
   };
 
   // Loading state
@@ -561,13 +582,110 @@ export default function HostGame() {
         </h1>
 
         <Card className="w-full max-w-2xl" padding="lg">
-          <PlayerList
-            players={allPlayers}
-            showScores
-            showRank
-            size="xl"
-          />
+          <p className="text-center text-sm text-gray-500 mb-4">Tap a player to adjust their score</p>
+          <div className="space-y-3">
+            {allPlayers.map((p, index) => (
+              <div
+                key={p.id}
+                onClick={() => {
+                  setAdjustingPlayer(p);
+                  setScoreAdjustment(0);
+                }}
+                className="flex items-center gap-4 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors"
+              >
+                <span className="text-2xl font-bold text-gray-400 w-8">
+                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
+                </span>
+                <span className="text-3xl">{p.avatar}</span>
+                <span className="text-xl font-semibold flex-1">
+                  {p.name} {p.is_host && <span className="text-sm text-gray-400">(Host)</span>}
+                </span>
+                <span className="text-2xl font-bold text-christmas-gold">
+                  {p.score.toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
         </Card>
+
+        {/* Score adjustment modal */}
+        {adjustingPlayer && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <Card className="w-full max-w-sm" padding="lg">
+              <div className="text-center mb-6">
+                <span className="text-5xl">{adjustingPlayer.avatar}</span>
+                <h3 className="text-xl font-bold mt-2">{adjustingPlayer.name}</h3>
+                <p className="text-gray-500">Current score: {adjustingPlayer.score.toLocaleString()}</p>
+              </div>
+
+              <div className="flex items-center justify-center gap-4 mb-6">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setScoreAdjustment(prev => prev - 100)}
+                  className="text-2xl w-14 h-14"
+                >
+                  -100
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setScoreAdjustment(prev => prev - 10)}
+                  className="text-xl w-12 h-12"
+                >
+                  -10
+                </Button>
+                <div className="text-center min-w-[80px]">
+                  <p className={`text-3xl font-bold ${scoreAdjustment > 0 ? 'text-christmas-green' : scoreAdjustment < 0 ? 'text-christmas-red' : 'text-gray-400'}`}>
+                    {scoreAdjustment > 0 ? '+' : ''}{scoreAdjustment}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    New: {Math.max(0, adjustingPlayer.score + scoreAdjustment).toLocaleString()}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setScoreAdjustment(prev => prev + 10)}
+                  className="text-xl w-12 h-12"
+                >
+                  +10
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setScoreAdjustment(prev => prev + 100)}
+                  className="text-2xl w-14 h-14"
+                >
+                  +100
+                </Button>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  fullWidth
+                  onClick={() => {
+                    setAdjustingPlayer(null);
+                    setScoreAdjustment(0);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  onClick={handleScoreAdjustment}
+                  disabled={scoreAdjustment === 0}
+                >
+                  Apply
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
 
         <div className="flex gap-4 mt-8">
           <Button variant="secondary" size="lg" onClick={backToQuestion}>
@@ -607,13 +725,110 @@ export default function HostGame() {
 
         <Card className="w-full max-w-2xl mb-8" padding="lg">
           <h3 className="font-bold text-xl mb-4 text-center">Final Standings</h3>
-          <PlayerList
-            players={sortedPlayers}
-            showScores
-            showRank
-            size="lg"
-          />
+          <p className="text-center text-sm text-gray-500 mb-4">Tap a player to adjust their score</p>
+          <div className="space-y-3">
+            {sortedPlayers.map((p, index) => (
+              <div
+                key={p.id}
+                onClick={() => {
+                  setAdjustingPlayer(p);
+                  setScoreAdjustment(0);
+                }}
+                className="flex items-center gap-4 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors"
+              >
+                <span className="text-2xl font-bold text-gray-400 w-8">
+                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
+                </span>
+                <span className="text-3xl">{p.avatar}</span>
+                <span className="text-xl font-semibold flex-1">
+                  {p.name} {p.is_host && <span className="text-sm text-gray-400">(Host)</span>}
+                </span>
+                <span className="text-2xl font-bold text-christmas-gold">
+                  {p.score.toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
         </Card>
+
+        {/* Score adjustment modal */}
+        {adjustingPlayer && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <Card className="w-full max-w-sm" padding="lg">
+              <div className="text-center mb-6">
+                <span className="text-5xl">{adjustingPlayer.avatar}</span>
+                <h3 className="text-xl font-bold mt-2">{adjustingPlayer.name}</h3>
+                <p className="text-gray-500">Current score: {adjustingPlayer.score.toLocaleString()}</p>
+              </div>
+
+              <div className="flex items-center justify-center gap-4 mb-6">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setScoreAdjustment(prev => prev - 100)}
+                  className="text-2xl w-14 h-14"
+                >
+                  -100
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setScoreAdjustment(prev => prev - 10)}
+                  className="text-xl w-12 h-12"
+                >
+                  -10
+                </Button>
+                <div className="text-center min-w-[80px]">
+                  <p className={`text-3xl font-bold ${scoreAdjustment > 0 ? 'text-christmas-green' : scoreAdjustment < 0 ? 'text-christmas-red' : 'text-gray-400'}`}>
+                    {scoreAdjustment > 0 ? '+' : ''}{scoreAdjustment}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    New: {Math.max(0, adjustingPlayer.score + scoreAdjustment).toLocaleString()}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setScoreAdjustment(prev => prev + 10)}
+                  className="text-xl w-12 h-12"
+                >
+                  +10
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setScoreAdjustment(prev => prev + 100)}
+                  className="text-2xl w-14 h-14"
+                >
+                  +100
+                </Button>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  fullWidth
+                  onClick={() => {
+                    setAdjustingPlayer(null);
+                    setScoreAdjustment(0);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  onClick={handleScoreAdjustment}
+                  disabled={scoreAdjustment === 0}
+                >
+                  Apply
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
 
         <Button variant="primary" size="huge" onClick={() => navigate('/')}>
           Play Again
